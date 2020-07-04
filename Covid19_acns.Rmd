@@ -1,0 +1,309 @@
+---
+title: "Covid19 - simple analysis using R"
+author: "Ana Carolina Novaes"
+date: "03/07/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+```{r packages, cache=TRUE, echo=TRUE, include=FALSE}
+
+{
+library(tidyverse)
+library(COVID19)
+library(readr)
+library(dplyr)
+library(plotly)
+library(pipeR)
+library(data.table)
+library(stringr)
+library(zoo)
+library(usethis)
+library(tidyr)
+  }
+
+```
+
+```{r setup, include=FALSE}
+
+{
+  usethis::use_git_config(user.name = "Carolina Novaes", # Seu nome
+                        user.email = "carolnovaes.s@gmail.com") # Seu email
+  usethis::browse_github_token()
+  
+  GITHUB_PAT= "xxxxxxxxxxxxx"
+  
+} # git information
+
+```
+
+```{r database, cache=TRUE, echo=TRUE, include=FALSE}
+# Abrindo a base dcovid19 puxada do pacote COVID19
+{
+  dcovid19 = covid19(level = 1)
+
+
+# Você pode remover efetivamente a notação científica em 'printing' com este cóigo: options (scipen = 999).
+
+options(scipen = 999)
+
+# Replace NA's
+dcovid19 <- mutate(dcovid19, before=NA, after = 0)
+
+# Quem são os países da base? ----> são 195
+
+paises = dcovid19 %>%
+  dplyr::select(id) %>%
+  dplyr::distinct()
+
+
+dcovid19_2 = dcovid19 %>% select(id, tests, date, confirmed, deaths, population, recovered,stringency_index, stay_home_restrictions, school_closing, workplace_closing) %>% 
+  filter(id %in% c("BRA", "ITA", "ARG", "FRA", "USA", "IDN", "IND", "NZL", "SWZ", "SWE", "JPN", "URY")) %>% 
+  dplyr::mutate(taxa_casos_milhao = (confirmed/population)*1000000) %>%
+  dplyr::mutate(taxa_mortes_cmil = (deaths/population)*100000) %>% 
+  dplyr::mutate(taxa_testes_cmil = (tests/population)*100000) %>% 
+  dplyr::mutate(taxa_recup_mil = (recovered/(confirmed-deaths))*1000)
+
+# Mudando a primeira coluna de "id" para "country"
+names(dcovid19_2)[names(dcovid19_2) == "id"] = "country"
+
+}
+
+#Agrupando as taxas por data e país  
+
+{
+
+casos_milhao_taxa = dcovid19_2 %>% group_by(date, country) %>% 
+  dplyr::summarise(taxa_casos_milhao = sum(taxa_casos_milhao)) %>%
+  filter(taxa_casos_milhao > 0) %>% spread(key = "country", value = "taxa_casos_milhao")
+
+mortes_cem_mil_taxa = dcovid19_2 %>% group_by(date, country) %>% 
+  dplyr::summarise(taxa_mortes_cmil = sum(taxa_mortes_cmil)) %>%
+  filter(taxa_mortes_cmil > 0) %>% spread(key = "country", value = "taxa_mortes_cmil")
+
+testes_cem_mil_taxa = dcovid19_2 %>% group_by(date, country) %>% 
+  dplyr::summarise(taxa_testes_cmil = sum(taxa_testes_cmil)) %>%
+  filter(taxa_testes_cmil > 0) %>% spread(key = "country", value = "taxa_testes_cmil")
+
+recup_mil_taxa = dcovid19_2 %>% group_by(date, country) %>% 
+  dplyr::summarise(taxa_recup_mil = sum(taxa_recup_mil)) %>% 
+  filter(taxa_recup_mil > 0) %>% spread(key = "country", value = "taxa_recup_mil")
+
+}
+
+```
+
+
+```{r graph2, echo=FALSE, include=TRUE, error=FALSE}
+
+# Criando um gráfico de comparação de mortes absolutas entre BRA, USA e ARG
+
+dcovid19_3 = dcovid19_2 %>% 
+  ungroup() %>% 
+  select(date, country, deaths, tests, confirmed, population, recovered) %>% 
+  gather(key = variable, value = "occurrences", deaths, confirmed, tests, population, recovered)
+
+gdeaths = dcovid19_3 %>% 
+  filter(country == c("BRA", "ITA", "ARG", "FRA", "USA", "IDN", "IND", "NZL", "SWZ", "SWE", "JPN", "URY"),
+         variable == "deaths")
+         
+{
+g = ggplot(data=gdeaths, aes(x=date, y=occurrences, group = country)) + 
+      geom_line() +
+      geom_point(aes(x=date, y=occurrences, color = country))
+
+# use complete themes
+g + theme_classic()
+g + theme_grey()
+g + theme_bw()
+g + theme_linedraw()
+g + theme_minimal()
+g + theme_light()
+
+# include labs
+g + labs(title="Evolução das ocorrências (mortes)", x="Período", y="Ocorrências") 
+g + xlab(NULL) + ylab(NULL)
+
+# grid
+g + theme(panel.grid.major = element_line(colour = "black"))
+g + theme(panel.grid.major = element_line(size = 2))
+g + theme(panel.grid.major = element_line(linetype = "dotted"))
+
+# plot background
+g + theme(plot.background = element_rect(fill = "grey80", colour = NA))
+g + theme(plot.background = element_rect(colour = "red", size = 2))
+g + theme(panel.background = element_rect(fill = "linen"))
+
+# element blanck and last plot
+last_plot() + theme(panel.grid.minor = element_blank())
+last_plot() + theme(panel.grid.major = element_blank())
+last_plot() + theme(panel.background = element_blank())
+last_plot() + theme(axis.title.x = element_blank(),  
+                   axis.title.y = element_blank())
+
+# aspect ratio
+g + theme(aspect.ratio = 9 / 16) # Wide screen
+g + theme(aspect.ratio = 2 / 1) # Long and skiny
+g + theme(aspect.ratio = 1)
+
+# legend
+g + theme(legend.position = "none") 
+g + theme(legend.position="top")
+g + theme(legend.position="bottom")
+
+# facets
+g + facet_wrap( ~ country, ncol=2)
+
+g
+}
+
+```
+
+
+```{r graph3, echo=FALSE, include=TRUE, error=FALSE}
+
+dcovid19_4 = dcovid19_2 %>% 
+  ungroup() %>% 
+  select(date, country, taxa_casos_milhao, taxa_mortes_cmil, taxa_testes_cmil, taxa_recup_mil) %>% 
+  gather(key = variable, value = "occurrences", taxa_casos_milhao, taxa_mortes_cmil, taxa_testes_cmil, taxa_recup_mil)
+
+gdeaths_2 = dcovid19_4 %>% 
+  filter(country == c("BRA", "ITA", "ARG", "FRA", "USA", "IDN", "IND", "NZL", "SWZ", "SWE", "JPN", "URY"),
+         variable == "taxa_mortes_cmil")
+         
+{
+g2 = ggplot(data=gdeaths_2, aes(x=date, y=occurrences, group = country)) + 
+      geom_line() +
+      geom_point(aes(x=date, y=occurrences, color = country))
+
+# use complete themes
+g2 + theme_classic()
+g2 + theme_grey()
+g2 + theme_bw()
+g2 + theme_linedraw()
+g2 + theme_minimal()
+g2 + theme_light()
+
+# include labs
+g2 + labs(title="Evolução das taxa de morte por 100 mil habitantes", x="Período", y="Ocorrências") 
+g2 + xlab(NULL) + ylab(NULL)
+
+# grid
+g2 + theme(panel.grid.major = element_line(colour = "black"))
+g2 + theme(panel.grid.major = element_line(size = 2))
+g2 + theme(panel.grid.major = element_line(linetype = "dotted"))
+
+# plot background
+g2 + theme(plot.background = element_rect(fill = "grey80", colour = NA))
+g2 + theme(plot.background = element_rect(colour = "red", size = 2))
+g2 + theme(panel.background = element_rect(fill = "linen"))
+
+# element blanck and last plot
+last_plot() + theme(panel.grid.minor = element_blank())
+last_plot() + theme(panel.grid.major = element_blank())
+last_plot() + theme(panel.background = element_blank())
+last_plot() + theme(axis.title.x = element_blank(),  
+                   axis.title.y = element_blank())
+
+# aspect ratio
+g2 + theme(aspect.ratio = 9 / 16) # Wide screen
+g2 + theme(aspect.ratio = 2 / 1) # Long and skiny
+g2 + theme(aspect.ratio = 1)
+
+# legend
+g2 + theme(legend.position = "none") 
+g2 + theme(legend.position="top")
+g2 + theme(legend.position="bottom")
+
+# facets
+g2 + facet_wrap( ~ country, ncol=2)
+
+g2
+}
+```
+
+```{r graph1, echo=FALSE, include=TRUE, error=FALSE}
+
+# Criando gráficos comparativos das taxas de casos, mortes, testes e recuperados
+  ##### Rodar esses 4 próximos gráficos no R Script
+
+
+Casos = plot_ly(casos_milhao_taxa, x = ~date, y = ~BRA, name = 'Brasil',mode = 'line', type = 'scatter') %>% 
+   add_trace(y = ~ARG, name = 'Argentina', mode = 'line') %>% 
+   add_trace(y = ~IND, name = 'India', mode = 'line') %>% 
+   add_trace(y = ~FRA, name = 'Franca', mode = 'line') %>%
+   add_trace(y = ~IDN, name = 'Indonesia', mode = 'line') %>%
+   add_trace(y = ~ITA, name = 'Italia', mode = 'line') %>%
+   add_trace(y = ~JPN, name = 'Japao', mode = 'line') %>%
+   add_trace(y = ~NZL, name = 'Nova Zelandia', mode = 'line') %>%
+   add_trace(y = ~SWE, name = 'Suecia', mode = 'line') %>%
+   add_trace(y = ~SWZ, name = 'Suica', mode = 'line') %>%
+   add_trace(y = ~URY, name = 'Uruguai', mode = 'line') %>%
+   add_trace(y = ~USA, name = 'USA', mode = 'line', color = I("black")) %>%
+  layout(title = 'Casos confirmados de Covid-19 por milhao de habitantes',
+         xaxis = list (title = NA),
+         yaxis = list (title = 'Casos'))
+Casos
+
+
+
+Mortes = plot_ly(mortes_cem_mil_taxa, x = ~date, y = ~BRA, name = 'Brasil',mode = 'line', type = 'scatter') %>% 
+  add_trace(y = ~ARG, name = 'Argentina', mode = 'line') %>% 
+  add_trace(y = ~IND, name = 'India', mode = 'line') %>% 
+  add_trace(y = ~FRA, name = 'Franca', mode = 'line') %>%
+  add_trace(y = ~IDN, name = 'Indonesia', mode = 'line') %>%
+  add_trace(y = ~ITA, name = 'Italia', mode = 'line') %>%
+  add_trace(y = ~JPN, name = 'Japao', mode = 'line') %>%
+  add_trace(y = ~NZL, name = 'Nova Zelandia', mode = 'line') %>%
+  add_trace(y = ~SWE, name = 'Suecia', mode = 'line') %>%
+  add_trace(y = ~SWZ, name = 'Suica', mode = 'line') %>%
+  add_trace(y = ~URY, name = 'Uruguai', mode = 'line') %>%
+  add_trace(y = ~USA, name = 'USA', mode = 'line', color = I("black")) %>%
+  layout(title = 'Mortes relacionadas ao Covid-19 por 100 mil habitantes',
+         xaxis = list (title = NA),
+         yaxis = list (title = 'Mortes'))  
+Mortes
+
+
+
+Testes = plot_ly(testes_cem_mil_taxa, x = ~date, y = ~BRA, name = 'Brasil',mode = 'line', type = 'scatter') %>% 
+  add_trace(y = ~ARG, name = 'Argentina', mode = 'line') %>% 
+  add_trace(y = ~IND, name = 'India', mode = 'line') %>% 
+  add_trace(y = ~IDN, name = 'Indonesia', mode = 'line') %>%
+  add_trace(y = ~ITA, name = 'Italia', mode = 'line') %>%
+  add_trace(y = ~JPN, name = 'Japao', mode = 'line') %>%
+  add_trace(y = ~NZL, name = 'Nova Zelandia', mode = 'line') %>%
+  add_trace(y = ~SWE, name = 'Suecia', mode = 'line') %>%
+  add_trace(y = ~URY, name = 'Uruguai', mode = 'line') %>%
+  add_trace(y = ~USA, name = 'USA', mode = 'line', color = I("black")) %>%
+  layout(title = 'Testes de Coronavirus realizados  por 100 mil habitantes',
+         xaxis = list (title = NA),
+         yaxis = list (title = 'Testes')) 
+Testes
+
+
+
+Recuperados = plot_ly(recup_mil_taxa, x = ~date, y = ~BRA, name = 'Brasil', mode = 'line', type = 'scatter') %>% 
+  add_trace(y = ~ARG, name = 'Argentina', mode = 'line') %>% 
+  add_trace(y = ~IND, name = 'India', mode = 'line') %>% 
+  add_trace(y = ~FRA, name = 'Franca', mode = 'line') %>%
+  add_trace(y = ~IDN, name = 'Indonesia', mode = 'line') %>%
+  add_trace(y = ~ITA, name = 'Italia', mode = 'line') %>%
+  add_trace(y = ~JPN, name = 'Japao', mode = 'line') %>%
+  add_trace(y = ~NZL, name = 'Nova Zelandia', mode = 'line') %>%
+  add_trace(y = ~SWZ, name = 'Suica', mode = 'line') %>%
+  add_trace(y = ~URY, name = 'Uruguai', mode = 'line') %>%
+  add_trace(y = ~USA, name = 'USA', mode = 'line', color = I("black")) %>%
+  layout(title = 'Taxa de recuperação - Covid-19',
+          xaxis = list (title=NA),
+          yaxis = list (title = "Recuperados"))
+
+Recuperados
+```
+
